@@ -87,6 +87,11 @@ async def refresh_page_tool() -> str:
     print("Tool: Refreshing page")
     return await execute_browser_tool(shared_browser.refresh())
 
+async def press_enter_key_tool() -> str:
+    print("Tool: Pressing Enter key")
+    page = shared_browser._ensure_page() 
+    return await execute_browser_tool(page.keyboard.press('Enter')) 
+
 tools = [
     Tool.from_function(
         func=navigate_to_url_tool,
@@ -136,6 +141,12 @@ tools = [
         func=refresh_page_tool,
         name="refresh_page",
         description="Reload the current page in the browser.",
+    ),
+    Tool.from_function(
+        func=press_enter_key_tool,
+        name="press_enter_key",
+        description="Simulates pressing the Enter key on the keyboard. Use this after typing text into a search bar or form field to submit it.",
+        # No args_schema needed as it takes no arguments
     ),
 ]
 

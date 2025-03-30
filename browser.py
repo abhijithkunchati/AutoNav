@@ -224,6 +224,7 @@ class Browser:
         except PlaywrightError as e:
             logger.error(f"Error refreshing page: {e}")
             raise BrowserError(f"Failed to refresh page: {e}") from e
+    # --- Add this method inside the Browser class in browser.py ---
 
     async def __aenter__(self):
         await self.start()
