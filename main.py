@@ -3,8 +3,9 @@ from dotenv import load_dotenv
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.tools import Tool
 from pydantic import BaseModel, Field
-from typing import Optional, Type
-from playwright.async_api import async_playwright
+from typing import List, Dict
+from playwright.async_api import async_playwright, Playwright, Browser, Page
+from flags import CHROME_ARGS
 
 load_dotenv()
 
@@ -15,39 +16,60 @@ if not api_key:
 class GoogleSearchSchema(BaseModel):
     query: str = Field(..., description="Search query to look up on Google")
 
+
+async def launch_browser(playwright: Playwright, headless: bool = False) -> Browser:
+    """Launch a configured browser instance with anti-detection measures."""
+    chrome_args = list(CHROME_ARGS)
+    browser = await playwright.chromium.launch(
+        headless=headless,
+        args=chrome_args,
+        handle_sigterm=False,
+        handle_sigint=False,
+    )
+    return browser
+
+async def extract_search_results(page: Page) -> List[Dict[str, str]]:
+    results = []
+    result_elements = await page.query_selector_all(".g")
+    
+    for element in result_elements[:3]:
+        title_element = await element.query_selector("h3")
+        link_element = await element.query_selector("a")
+        snippet_element = await element.query_selector(".VwiC3b")
+        
+        if all([title_element, link_element, snippet_element]):
+            results.append({
+                "title": await title_element.inner_text(),
+                "url": await link_element.get_attribute("href"),
+                "snippet": await snippet_element.inner_text()
+            })
+    
+    return results
+
+def format_results(query: str, results: List[Dict[str, str]]) -> str:
+    if not results:
+        return "No search results found"
+    
+    formatted = [
+        f"Result {i+1}:\nTitle: {r['title']}\nURL: {r['url']}\nSnippet: {r['snippet']}"
+        for i, r in enumerate(results)
+    ]
+    return f"Google search results for '{query}':\n\n" + "\n\n".join(formatted)
+
 async def google_search(query: str) -> str:
-    """Perform a Google search and return the top results"""
-    async with async_playwright() as p:
-        browser = await p.chromium.launch(headless=False)
+    async with async_playwright() as playwright:
+        browser = await launch_browser(playwright, headless=False)
         page = await browser.new_page()
         
-        await page.goto(f"https://www.google.com/search?q={query}")
-        await page.wait_for_selector("#search")
-        results = []
-        result_elements = await page.query_selector_all(".g")
-        
-        for i, element in enumerate(result_elements[:3]):
-            title = await element.query_selector("h3")
-            link = await element.query_selector("a")
-            snippet = await element.query_selector(".VwiC3b")
+        try:
+            await page.goto(f"https://www.google.com/search?q={query}", timeout=15000)
+            await page.wait_for_selector("#search", timeout=10000)
             
-            if title and link and snippet:
-                results.append({
-                    "title": await title.inner_text(),
-                    "url": await link.get_attribute("href"),
-                    "snippet": await snippet.inner_text()
-                })
-        
-        await browser.close()
-        
-        if not results:
-            return "No search results found"
-        
-        formatted_results = "\n\n".join(
-            f"Result {i+1}:\nTitle: {r['title']}\nURL: {r['url']}\nSnippet: {r['snippet']}"
-            for i, r in enumerate(results)
-        )
-        return f"Google search results for '{query}':\n\n{formatted_results}"
+            results = await extract_search_results(page)
+            return format_results(query, results)
+            
+        finally:
+            await browser.close()
 
 tools = [
     Tool.from_function(
