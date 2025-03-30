@@ -90,7 +90,9 @@ async def refresh_page_tool() -> str:
 async def press_enter_key_tool() -> str:
     print("Tool: Pressing Enter key")
     page = shared_browser._ensure_page() 
-    return await execute_browser_tool(page.keyboard.press('Enter')) 
+    result = await execute_browser_tool(page.keyboard.press('Enter')) 
+    page.wait_for_load_state()
+    return result
 
 tools = [
     Tool.from_function(

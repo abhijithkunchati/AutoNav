@@ -3,6 +3,7 @@ import logging
 from typing import Optional
 from flags import CHROME_ARGS
 import re 
+import time
 
 from playwright.async_api import (
     Playwright,
@@ -71,6 +72,7 @@ class Browser:
             logger.info("Browser not initialized or already closed.")
             return
         logger.info("Closing browser...")
+        await self.playwright.stop()
         if self.page and not self.page.is_closed():
             try:
                 await self.page.close()
@@ -165,8 +167,9 @@ class Browser:
             logger.error(f"Error getting page title: {e}")
             raise BrowserError(f"Failed to get page title: {e}") from e
 
-    async def get_content(self, format: str = "text", max_length: int = 10000) -> str:
+    async def get_content(self, format: str = "html", max_length: int = 10000) -> str:
         page = self._ensure_page()
+        time.sleep(3)  # Allow time for the page to load
         logger.info(f"Getting page content (format: {format})")
         try:
             if format == "html":
@@ -186,19 +189,6 @@ class Browser:
         except PlaywrightError as e:
             logger.error(f"Error getting page content (format: {format}): {e}")
             raise BrowserError(f"Failed to get page content: {e}") from e
-        
-    async def wait_for_load_state(self, state: str = "domcontentloaded", timeout_ms: int = 30000) -> None:
-        page = self._ensure_page()
-        logger.info(f"Waiting for load state: {state}")
-        try:
-            await page.wait_for_load_state(state, timeout=timeout_ms)
-            logger.info(f"Load state '{state}' reached.")
-        except PlaywrightTimeoutError:
-            logger.error(f"Timeout waiting for load state: {state}")
-            raise BrowserError(f"Timeout waiting for load state: {state}")
-        except PlaywrightError as e:
-            logger.error(f"Error waiting for load state {state}: {e}")
-            raise BrowserError(f"Failed to wait for load state {state}: {e}") from e
 
     async def navigate_back(self, wait_until: str = "domcontentloaded", timeout_ms: int = 10000) -> None:
         page = self._ensure_page()
@@ -224,7 +214,6 @@ class Browser:
         except PlaywrightError as e:
             logger.error(f"Error refreshing page: {e}")
             raise BrowserError(f"Failed to refresh page: {e}") from e
-    # --- Add this method inside the Browser class in browser.py ---
 
     async def __aenter__(self):
         await self.start()
