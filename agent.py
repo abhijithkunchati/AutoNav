@@ -2,8 +2,8 @@ import asyncio
 from typing import List, Optional
 from langchain_core.messages import BaseMessage, ToolMessage
 from langchain_core.tools import Tool
-from browser import Browser, BrowserError # Assuming 'browser.py' contains your Browser class
-from browser_tools import create_browser_tools # Import from our new tools file
+from browser import Browser
+from browser_tools import create_browser_tools
 
 class Agent:
     """Encapsulates the agent logic, browser interaction, and LLM communication."""
@@ -17,7 +17,7 @@ class Agent:
         self.max_iterations = max_iterations
         self.browser: Optional[Browser] = None
         self.tools: List[Tool] = []
-        self.model_with_tools = None # Or appropriate type hint
+        self.model_with_tools = None 
 
     async def setup(self):
         await self._initialize_browser_and_tools()
@@ -33,7 +33,7 @@ class Agent:
         self.tools = create_browser_tools(self.browser)
         self.model_with_tools = self.llm.bind_tools(self.tools)
 
-    async def interaction(self, task: str) -> str:
+    async def interact(self, task: str) -> str:
         """Runs the agent for the given task."""
         if not self.browser or not self.model_with_tools:
             raise RuntimeError("Agent is not set up. Call agent.setup() before running.")
@@ -109,12 +109,10 @@ class Agent:
             # The tool.func here is the lambda created in create_browser_tools,
             # which already captures the browser instance and calls the correct underlying function.
             if tool.args_schema:
-                # Validate and call with arguments
-                validated_args = tool.args_schema(**tool_args) # Pydantic validation
-                result = await tool.func(**validated_args.dict()) # Call the lambda
+                validated_args = tool.args_schema(**tool_args)
+                result = await tool.func(**validated_args.dict())
             else:
-                # Call function without arguments
-                result = await tool.func() # Call the lambda
+                result = await tool.func()
 
             print(f"  Tool '{tool_name}' result type: {type(result)}")
             # Ensure result is a string for ToolMessage content
