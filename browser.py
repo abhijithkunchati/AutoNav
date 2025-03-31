@@ -1,4 +1,5 @@
 import asyncio
+import base64
 import logging
 from typing import Optional
 from flags import CHROME_ARGS
@@ -257,11 +258,9 @@ class Browser:
         logger.info(f"Attempting to click element with index: {index}")
         try:
             element_node = await self._find_element_by_index(index)
-            # Use XPath directly with Playwright's xpath= prefix
             selector = f"xpath={element_node.xpath}"
             logger.debug(f"Clicking index {index} using selector: {selector}")
             locator = page.locator(selector)
-            # Use standard click logic (like your existing click method)
             await locator.wait_for(state="visible", timeout=timeout_ms / 2)
             await locator.wait_for(state="enabled", timeout=timeout_ms / 2)
             await locator.click(timeout=timeout_ms)
@@ -307,6 +306,18 @@ class Browser:
         except Exception as e:
             logger.error(f"Unexpected error typing into element index {index}: {e}", exc_info=True)
             raise BrowserError(f"Unexpected error typing index {index}: {e}") from e
+        
+    async def take_screenshot(self, full_page: bool = False) -> str:
+        page = await self._ensure_page()
+        page.bring_to_front()
+        screenshot = await page.screenshot(
+			full_page=full_page,
+			animations='disabled',
+		)
+        screenshot_b64 = base64.b64encode(screenshot).decode('utf-8')
+        return screenshot_b64
+
+
     async def __aenter__(self):
         await self.start()
         return self
