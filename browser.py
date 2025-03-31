@@ -235,7 +235,7 @@ class Browser:
         try:
             state = await self.dom_service.get__dom_state()
             logger.info(f"Retrieved  DOM state for {state.url}. Found {len(state.selector_map)} interactive elements.")
-            logger.debug(f"DOM State: {state.get__string()}")
+            logger.debug(f"DOM State: {state.get_string()}")
             return state
         except Exception as e:
             logger.error(f"Error getting  DOM state: {e}", exc_info=True)
@@ -307,9 +307,9 @@ class Browser:
             logger.error(f"Unexpected error typing into element index {index}: {e}", exc_info=True)
             raise BrowserError(f"Unexpected error typing index {index}: {e}") from e
         
-    async def take_screenshot(self, full_page: bool = False) -> str:
-        page = await self._ensure_page()
-        page.bring_to_front()
+    async def get_screenshot(self, full_page: bool = False) -> str:
+        page = self._ensure_page()
+        await page.bring_to_front()
         screenshot = await page.screenshot(
 			full_page=full_page,
 			animations='disabled',

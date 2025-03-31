@@ -139,7 +139,7 @@ class DOMState:
     url: str = ""
     title: str = ""
 
-    def get__string(self) -> str:
+    def get_string(self) -> str:
         if not self.root_node:
             return "Page DOM is empty or could not be processed."
         return self.root_node.to__string()
