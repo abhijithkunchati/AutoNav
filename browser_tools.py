@@ -103,24 +103,6 @@ async def press_enter_key(browser: Browser) -> str:
         print(f"Warning: Error waiting for load state after Enter: {e}")
     return result if result else "Success: Enter key pressed successfully."
 
-async def get_interactive_elements(browser: Browser) -> str:
-    print("Tool: Getting interactive elements view")
-    if not browser or not browser._is_initialized:
-        return "Error: Browser is not initialized or available."
-    try:
-        state: DOMState = await browser.get__dom_state()
-        _string = state.get_string()
-        if not _string:
-             return "No interactive elements found or DOM is empty."
-        header = f"Success: Current URL: {state.url}\nPage Title: {state.title}\n\nInteractive Elements:\n"
-        return header + _string
-    except BrowserError as e:
-        print(f"Browser tool error getting interactive elements: {e}")
-        return f"Error: Browser Error: {e}"
-    except Exception as e:
-        print(f"Error: Unexpected browser tool error getting interactive elements: {e}")
-        return f"An unexpected error occurred: {e}"
-
 
 async def click_element_by_index(browser: Browser, index: int) -> str:
     print(f"Tool: Clicking element by index '{index}'")
@@ -142,7 +124,7 @@ async def click_element_with_text(browser: Browser, params: ClickElementByTextSc
         if element_node:
             try:
                 await element_node.scroll_into_view_if_needed()
-                await element_node.click(timeout=1500, force=True)
+                await element_node.click(timeout=5500, force=True)
             except Exception:
                 try:
                     await element_node.evaluate('el => el.click()')
@@ -212,12 +194,6 @@ def create_browser_tools(browser: Browser) -> List[Tool]:
             name="press_enter_key",
             description="Simulates pressing the Enter key on the keyboard. Use this after typing text into a search bar or form field to submit it.",
         ),
-        # Tool.from_function(
-        #     func=lambda: get_interactive_elements(browser),
-        #     name="get_interactive_elements",
-        #     description="Get a  view of the current page, focusing on interactive elements (links, buttons, inputs) marked with numerical indices like [1], [2]. Use this to identify elements for clicking or typing.",
-        #     args_schema=GetInteractiveElementsSchema # Use the new schema
-        # ),
          Tool.from_function(
             func=lambda index: click_element_by_index(browser, index),
             name="click_element_by_index",

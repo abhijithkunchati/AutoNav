@@ -4,7 +4,7 @@ from langchain_core.messages import BaseMessage, ToolMessage
 from langchain_core.tools import Tool
 from browser import Browser
 from browser_tools import create_browser_tools
-from utils import create_observation_message, load_prompt
+from prompt_utils import create_observation_message, load_prompt
 
 class Agent:
     """Encapsulates the agent logic, browser interaction, and LLM communication."""
@@ -24,13 +24,10 @@ class Agent:
         await self._initialize_browser_and_tools()
     
     async def _initialize_browser_and_tools(self):
-        print("Initializing agent's browser...")
         if self.browser:
-            print("Browser already initialized.")
             return
         self.browser = Browser()
         await self.browser.start()
-        print("Browser started successfully.")
         self.tools = create_browser_tools(self.browser)
         self.model_with_tools = self.llm.bind_tools(self.tools)
 
@@ -142,14 +139,9 @@ class Agent:
 
 
     async def close(self):
-        """Closes the browser."""
-        print("\nClosing agent's browser...")
         if self.browser:
             try:
                 await self.browser.close()
-                print("Browser closed.")
                 self.browser = None
             except Exception as e:
                 print(f"Error closing browser: {e}")
-        else:
-            print("Browser was not initialized or already closed.")

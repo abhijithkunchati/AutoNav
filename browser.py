@@ -2,7 +2,6 @@ import asyncio
 import base64
 import logging
 from typing import Optional
-from flags import CHROME_ARGS
 import re 
 import time
 from parse_dom.dom_service import DomService
@@ -47,7 +46,17 @@ class Browser:
             logger.info("Starting browser...")
             try:
                 self.playwright = await async_playwright().start()
-                chrome_args = list(CHROME_ARGS)
+                chrome_args = [
+				'--disable-blink-features=AutomationControlled',
+				'--no-sandbox',
+				'--window-size=1280,1024',
+				'--disable-extensions',
+				'--disable-infobars',
+				'--disable-background-timer-throttling',
+				'--disable-popup-blocking',
+				'--disable-backgrounding-occluded-windows',
+				'--disable-renderer-backgrounding',
+			]
                 self.browser = await self.playwright.chromium.launch(
                     headless=False,
                     args=chrome_args,
@@ -104,12 +113,8 @@ class Browser:
         logger.info("Browser closed.")
 
     def _ensure_page(self) -> Page:
-        if not self._is_initialized:
-             raise BrowserError("Browser is not initialized. Call start() first.")
         if not self.page or self.page.is_closed():
             raise BrowserError("Browser page is not available or closed.")
-        if not self.dom_service:
-             raise BrowserError("DOM Service is not initialized.")
         return self.page
 
     async def navigate_to_url(self, url: str, wait_until: str = "domcontentloaded", timeout_ms: int = 30000) -> None:

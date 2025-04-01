@@ -28,12 +28,8 @@ Example:
 - Only provide the tool sequence until one which changes the page state significantly.
 - Try to be efficient, e.g. fill forms at once, or chain tools where nothing changes on the page
 - only use multiple tools if it makes sense.
-- always send atleast one tool call until the ultimate task is done. 
-- If no toolcall is sent, it means the task is completed.
+- always use atleast one tool call until the ultimate task is done.
 
-1. ELEMENT INTERACTION:
-- Only indexes of the interactive elements
-- Elements marked with "[]Non-interactive text" are non-interactive
 
 1. NAVIGATION & ERROR HANDLING:
 - If no suitable elements exist, use other functions to complete the task
