@@ -4,9 +4,7 @@ import logging
 from typing import Optional
 import re 
 import time
-from parse_dom.dom_service import DomService
-from parse_dom.dom_view import DOMState
-from parse_dom.dom_view import DOMElementNode
+from dom_utils import get_elements, dom_to_string, DOM
 
 from playwright.async_api import (
     Playwright,
@@ -37,6 +35,7 @@ class Browser:
         self.user_agent = user_agent or 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36'
         self._is_initialized = False
         self._start_lock = asyncio.Lock()
+        self.dom: Optional[DOM] = None
 
     async def start(self) -> None:
         async with self._start_lock:
@@ -71,14 +70,10 @@ class Browser:
                 self.page = await self.context.new_page()
                 await self.page.goto("about:blank")
                 self._is_initialized = True
-
-                self.dom_service = DomService(self.page)
-
+                self.MINIMUM_WAIT_TIME = 2
+                self.dom = await get_elements(self.page)
                 logger.info("Browser started successfully.")
-            except PlaywrightError as e:
-                logger.error(f"Failed to start browser: {e}")
-                await self.close()
-                raise BrowserError(f"Failed to initialize browser: {e}") from e
+
             except Exception as e:
                 logger.error(f"Unexpected error starting browser: {e}")
                 await self.close()
@@ -112,117 +107,102 @@ class Browser:
         self._is_initialized = False
         logger.info("Browser closed.")
 
-    def _ensure_page(self) -> Page:
+    def get_page(self) -> Page:
         if not self.page or self.page.is_closed():
             raise BrowserError("Browser page is not available or closed.")
         return self.page
+    
+    async def wait_for_page_load(self):
+        """
+		Ensures page is fully loaded before continuing.
+		Waits for either document.readyState to be complete or minimum WAIT_TIME, whichever is longer.
+		"""
+        page = self.get_page()
 
-    async def navigate_to_url(self, url: str, wait_until: str = "domcontentloaded", timeout_ms: int = 30000) -> None:
-        page = self._ensure_page()
-        logger.info(f"Navigating to: {url}")
+		# Start timing
+        start_time = time.time()
+
+		# Wait for page load
         try:
-            response = await page.goto(url, wait_until=wait_until, timeout=timeout_ms)
-            status = response.status if response else 'unknown'
-            logger.info(f"Navigation to {url} successful (status: {status}).")
-            if response and not response.ok:
-                 logger.warning(f"Navigation to {url} resulted in non-OK status: {status}")
-        except PlaywrightTimeoutError:
-            logger.error(f"Timeout navigating to {url}")
-            raise BrowserError(f"Timeout error when navigating to {url}")
-        except PlaywrightError as e:
-            logger.error(f"Error navigating to {url}: {e}")
-            raise BrowserError(f"Failed to navigate to {url}: {e}") from e
+            await page.wait_for_load_state('load', timeout=5000)
+        except Exception:
+            pass
+
+		# Calculate remaining time to meet minimum WAIT_TIME
+        elapsed = time.time() - start_time
+        remaining = max(self.MINIMUM_WAIT_TIME - elapsed, 0)
+        logger.debug(
+			f'--Page loaded in {elapsed:.2f} seconds, waiting for additional {remaining:.2f} seconds'
+		)
+		# Sleep remaining time if needed
+        if remaining > 0:
+            await asyncio.sleep(remaining)
+
+    async def navigate_to_url(self, url: str) -> None:
+        page = self.get_page()
+        await page.goto(url)
+        await self.wait_for_page_load()
 
     async def click(self, selector: str, timeout_ms: int = 10000) -> None:
-        page = self._ensure_page()
-        logger.info(f"Attempting to click element: {selector}")
+        page = self.get_page()
         try:
             locator = page.locator(selector)
             await locator.wait_for(state="visible", timeout=timeout_ms / 2)
             await locator.wait_for(state="enabled", timeout=timeout_ms / 2)
             await locator.click(timeout=timeout_ms)
-            logger.info(f"Clicked element: {selector}")
-        except PlaywrightTimeoutError:
-            logger.error(f"Timeout waiting for or clicking element: {selector}")
-            try:
-                box = await page.locator(selector).bounding_box(timeout=1000)
-                logger.error(f"Element {selector} found but timed out on click/wait. Bounding box: {box}")
-            except Exception:
-                 logger.error(f"Element {selector} likely not present or visible.")
-            raise BrowserError(f"Timeout error interacting with element: {selector}")
-        except PlaywrightError as e:
+        except Exception as e:
             logger.error(f"Error clicking element {selector}: {e}")
             raise BrowserError(f"Failed to click element {selector}: {e}") from e
 
     async def type(self, selector: str, text: str, delay_ms: int = 30, timeout_ms: int = 10000) -> None:
-        page = self._ensure_page()
-        logger.info(f"Attempting to type into element: {selector}")
+        page = self.get_page()
         try:
             locator = page.locator(selector)
             await locator.wait_for(state="visible", timeout=timeout_ms)
             await locator.fill("", timeout=timeout_ms / 2)
             await locator.type(text, delay=delay_ms, timeout=timeout_ms)
-            logger.info(f"Typed '{text[:20]}...' into element: {selector}")
-        except PlaywrightTimeoutError:
-            logger.error(f"Timeout waiting for or typing into element: {selector}")
-            raise BrowserError(f"Timeout error interacting with element: {selector}")
-        except PlaywrightError as e:
+        except Exception as e:
             logger.error(f"Error typing into element {selector}: {e}")
             raise BrowserError(f"Failed to type into element {selector}: {e}") from e
 
     async def get_current_url(self) -> str:
-        page = self._ensure_page()
+        page = self.get_page()
         return page.url
 
     async def get_title(self) -> str:
-        page = self._ensure_page()
+        page = self.get_page()
         try:
             return await page.title()
         except PlaywrightError as e:
             logger.error(f"Error getting page title: {e}")
             raise BrowserError(f"Failed to get page title: {e}") from e
 
-    async def get_content(self, format: str = "html", max_length: int = 100000) -> str:
-        page = self._ensure_page()
-        time.sleep(3)  # Allow time for the page to load
-        logger.info(f"Getting page content (format: {format})")
+    async def get_html_content(self) -> str:
+        page = self.get_page()
+        time.sleep(3)
         try:
-            if format == "html":
-                content = await page.content()
-                logger.info(f"Retrieved HTML content (length: {len(content)})")
-                return content
-            elif format == "text":
-                text_content = await page.inner_text('body')
-                cleaned_text = re.sub(r'\s+', ' ', text_content).strip()
-                logger.info(f"Retrieved and cleaned text content (original length: {len(text_content)}, cleaned length: {len(cleaned_text)})")
-                if len(cleaned_text) > max_length:
-                    logger.warning(f"Truncating text content from {len(cleaned_text)} to {max_length} characters.")
-                    return cleaned_text[:max_length] + "... [Content Truncated]"
-                return cleaned_text
-            else:
-                raise ValueError("Invalid format specified. Use 'text' or 'html'.")
+            content = await page.content()
+            return content
         except PlaywrightError as e:
             logger.error(f"Error getting page content (format: {format}): {e}")
             raise BrowserError(f"Failed to get page content: {e}") from e
 
     async def navigate_back(self, wait_until: str = "domcontentloaded", timeout_ms: int = 10000) -> None:
-        page = self._ensure_page()
-        logger.info("Navigating back")
+        page = self.get_page()
         try:
             await page.go_back(wait_until=wait_until, timeout=timeout_ms)
         except PlaywrightError as e:
             logger.warning(f"Could not navigate back (may be at start of history): {e}")
 
     async def navigate_forward(self, wait_until: str = "domcontentloaded", timeout_ms: int = 10000) -> None:
-        page = self._ensure_page()
-        logger.info("Navigating forward")
+        page = self.get_page()
         try:
             await page.go_forward(wait_until=wait_until, timeout=timeout_ms)
         except PlaywrightError as e:
             logger.warning(f"Could not navigate forward (may be at end of history): {e}")
 
     async def refresh(self, wait_until: str = "domcontentloaded", timeout_ms: int = 30000) -> None:
-        page = self._ensure_page()
+        page = self.get_page()
         logger.info("Refreshing page")
         try:
             await page.reload(wait_until=wait_until, timeout=timeout_ms)
@@ -230,98 +210,34 @@ class Browser:
             logger.error(f"Error refreshing page: {e}")
             raise BrowserError(f"Failed to refresh page: {e}") from e
         
-    async def get__dom_state(self) -> DOMState:
+    async def update_dom(self) -> str:
         """
-        Retrieves the  DOM state with indexed interactive elements.
+        Updates dom and returns string
         """
-        self._ensure_page() # Ensures page and dom_service are ready
-        logger.info("Getting  DOM state...")
-        if not self.dom_service: # Redundant check, but safe
-            raise BrowserError("DOM Service is not available.")
         try:
-            state = await self.dom_service.get__dom_state()
-            logger.info(f"Retrieved  DOM state for {state.url}. Found {len(state.selector_map)} interactive elements.")
-            logger.debug(f"DOM State: {state.get_string()}")
-            return state
+            page = self.get_page()
+            self.dom = await get_elements(page) 
+            return dom_to_string(self.dom.elements)
         except Exception as e:
             logger.error(f"Error getting  DOM state: {e}", exc_info=True)
             raise BrowserError(f"Failed to get  DOM state: {e}") from e
-
-    async def _find_element_by_index(self, index: int) -> DOMElementNode:
-        """Helper to get the DOM node for a given highlight index."""
-        state = await self.get__dom_state() # Get fresh state
-        element_node = state.get_element_by_index(index)
-        if not element_node:
-            active_indices = list(state.selector_map.keys())
-            raise BrowserError(f"Element with index {index} not found. Available indices: {active_indices}")
-        if not element_node.xpath:
-            raise BrowserError(f"Element with index {index} found, but has no XPath for interaction.")
-        return element_node
-
-    async def click_by_index(self, index: int, timeout_ms: int = 10000) -> None:
-        """Clicks an element identified by its highlight index."""
-        page = self._ensure_page()
-        logger.info(f"Attempting to click element with index: {index}")
-        try:
-            element_node = await self._find_element_by_index(index)
-            selector = f"xpath={element_node.xpath}"
-            logger.debug(f"Clicking index {index} using selector: {selector}")
-            locator = page.locator(selector)
-            await locator.wait_for(state="visible", timeout=timeout_ms / 2)
-            await locator.wait_for(state="enabled", timeout=timeout_ms / 2)
-            await locator.click(timeout=timeout_ms)
-            logger.info(f"Clicked element with index: {index} ({element_node.tag_name})")
-        except PlaywrightTimeoutError as e:
-            logger.error(f"Timeout waiting for or clicking element index {index} (selector: {selector}): {e}")
-            # Add more debugging potentially, like bounding box
-            raise BrowserError(f"Timeout error interacting with element index {index}") from e
-        except BrowserError as e: # Catch specific "not found" errors
-            logger.error(f"Error clicking index {index}: {e}")
-            raise e
-        except PlaywrightError as e:
-            logger.error(f"Playwright error clicking element index {index} (selector: {selector}): {e}")
-            raise BrowserError(f"Failed to click element index {index}: {e}") from e
-        except Exception as e:
-            logger.error(f"Unexpected error clicking element index {index}: {e}", exc_info=True)
-            raise BrowserError(f"Unexpected error clicking index {index}: {e}") from e
-
-
-    async def type_by_index(self, index: int, text: str, delay_ms: int = 30, timeout_ms: int = 10000) -> None:
-        """Types text into an element identified by its highlight index."""
-        page = self._ensure_page()
-        logger.info(f"Attempting to type into element with index: {index}")
-        try:
-            element_node = await self._find_element_by_index(index)
-            selector = f"xpath={element_node.xpath}"
-            logger.debug(f"Typing into index {index} using selector: {selector}")
-            locator = page.locator(selector)
-            # Use standard type logic (like your existing type method)
-            await locator.wait_for(state="visible", timeout=timeout_ms)
-            await locator.fill("", timeout=timeout_ms / 2) # Clear field first
-            await locator.type(text, delay=delay_ms, timeout=timeout_ms)
-            logger.info(f"Typed '{text[:20]}...' into element index: {index} ({element_node.tag_name})")
-        except PlaywrightTimeoutError as e:
-            logger.error(f"Timeout waiting for or typing into element index {index} (selector: {selector}): {e}")
-            raise BrowserError(f"Timeout error interacting with element index {index}") from e
-        except BrowserError as e:
-            logger.error(f"Error typing into index {index}: {e}")
-            raise e
-        except PlaywrightError as e:
-            logger.error(f"Playwright error typing into element index {index} (selector: {selector}): {e}")
-            raise BrowserError(f"Failed to type into element index {index}: {e}") from e
-        except Exception as e:
-            logger.error(f"Unexpected error typing into element index {index}: {e}", exc_info=True)
-            raise BrowserError(f"Unexpected error typing index {index}: {e}") from e
         
-    async def get_screenshot(self, full_page: bool = False) -> str:
-        page = self._ensure_page()
-        await page.bring_to_front()
-        screenshot = await page.screenshot(
-			full_page=full_page,
-			animations='disabled',
-		)
-        screenshot_b64 = base64.b64encode(screenshot).decode('utf-8')
-        return screenshot_b64
+    async def click_element_by_index(self, index: int, timeout_ms: int = 10000):
+        if index not in self.dom.element_map:
+            raise Exception(
+                f'Element with index {index} does not exist - retry or use alternative actions'
+            )
+        xpath = self.dom.element_map[index]
+        await self._click_element_by_xpath(xpath)
+
+    async def type_element_by_index(self, index: int, text: str) -> None:
+        if index not in self.dom.element_map:
+                raise Exception(
+					f'Element with index {index} does not exist - retry or use alternative actions'
+				)
+        xpath = self.dom.element_map[index]
+        await self._input_text_by_xpath(xpath, text)
+        
     
     async def get_locate_element_by_text(self, text: str, nth: Optional[int] = 0, element_type: Optional[str] = None) -> Optional[ElementHandle]:
         """
@@ -355,6 +271,135 @@ class Browser:
         except Exception as e:
             logger.error(f"❌  Failed to locate element by text '{text}': {str(e)}")
             return None
+    
+    async def _input_text_by_xpath(self, xpath: str, text: str):
+        page = self.get_page()
+        try:
+            element = await page.wait_for_selector(f'xpath={xpath}', timeout=10000, state='visible')
+
+            if element is None:
+                raise Exception(f'Element with xpath: {xpath} not found')
+            await element.scroll_into_view_if_needed()
+            await element.fill('')
+            await element.type(text)
+            await self.wait_for_page_load()
+
+        except Exception as e:
+            raise Exception(
+				f'Failed to input text into element with xpath: {xpath}. Error: {str(e)}'
+			)
+
+    async def _click_element_by_xpath(self, xpath: str):
+        page = self.get_page()
+
+        try:
+            element = await page.wait_for_selector(f'xpath={xpath}', timeout=10000, state='visible')
+
+            if element is None:
+                raise Exception(f'Element with xpath: {xpath} not found')
+
+            await element.scroll_into_view_if_needed()
+
+            try:
+                await element.click()
+                await self.wait_for_page_load()
+                return
+            except Exception:
+                pass
+
+            try:
+                await page.evaluate('(el) => el.click()', element)
+                await self.wait_for_page_load()
+                return
+            except Exception as e:
+                raise Exception(f'Failed to click element: {str(e)}')
+
+        except Exception as e:
+            raise Exception(f'Failed to click element with xpath: {xpath}. Error: {str(e)}')
+
+    async def take_screenshot(
+        self,  full_page: bool = False
+    ) -> str:
+        """
+        Returns a base64 encoded screenshot of the current page.
+        """
+        try: 
+            await self.wait_for_page_load()
+            page = self.get_page()
+            await self.highlight_elements_in_page()
+            screenshot = await page.screenshot(full_page=full_page, animations='disabled')
+            screenshot_b64 = base64.b64encode(screenshot).decode('utf-8')
+            await self.remove_highlights()
+            return screenshot_b64
+        except Exception as e:
+            raise Exception(f'Error While taking Screenshot: {str(e)}')
+
+    async def highlight_elements_in_page(self):
+        page = self.get_page()
+        await self.remove_highlights()
+        script = """
+        const highlights = {
+        """
+
+        try: 
+        # Build the highlights object with all selectors and indices
+            if(not self.dom and not self.dom.element_map):
+                raise Exception(f'Error when getting element map for highlighting')
+            for index, selector in self.dom.element_map.items():
+                # Adjusting the JavaScript code to accept variables
+                script += f'"{index}": "{selector}",\n'
+
+            script += """
+            };
+            
+            for (const [index, selector] of Object.entries(highlights)) {
+                const el = document.evaluate(selector, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue;
+                if (!el) continue;  // Skip if element not found
+                el.style.outline = "2px solid red";
+                el.setAttribute('browser-user-highlight-id', 'playwright-highlight');
+                
+                const label = document.createElement("div");
+                label.className = 'playwright-highlight-label';
+                label.style.position = "fixed";
+                label.style.background = "red";
+                label.style.color = "white";
+                label.style.padding = "2px 6px";
+                label.style.borderRadius = "10px";
+                label.style.fontSize = "12px";
+                label.style.zIndex = "9999999";
+                label.textContent = index;
+                const rect = el.getBoundingClientRect();
+                label.style.top = (rect.top - 20) + "px";
+                label.style.left = rect.left + "px";
+                document.body.appendChild(label);
+            }
+            """
+
+            await page.evaluate(script)
+        except Exception as e:
+            raise Exception(f'Error While Highlighting: {str(e)}')
+
+    async def remove_highlights(self):
+        try: 
+            page = self.get_page()
+            await page.evaluate(
+                """
+                // Remove all highlight outlines
+                const highlightedElements = document.querySelectorAll('[browser-user-highlight-id="playwright-highlight"]');
+                highlightedElements.forEach(el => {
+                    el.style.outline = '';
+                    el.removeAttribute('browser-user-highlight-id');
+                });
+                
+
+                // Remove all labels
+                const labels = document.querySelectorAll('.playwright-highlight-label');
+                labels.forEach(label => label.remove());
+                """
+            )
+        except Exception as e: 
+            raise Exception(f'Error While removing Highlights: {str(e)}')
+
 
 
     async def __aenter__(self):

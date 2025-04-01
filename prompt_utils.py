@@ -1,16 +1,7 @@
 from __future__ import annotations
-
-import json
-from typing import List, Optional, Dict, Any
 from browser import Browser
-import importlib.resources
-
 from langchain_core.messages import (
-    AIMessage,
-    BaseMessage,
     HumanMessage,
-    SystemMessage,
-    ToolMessage,
 )
 
 
@@ -22,22 +13,20 @@ async def create_observation_message(
     ) -> HumanMessage:
 
     url = await browser.get_current_url()
-    dom_state = await browser.get__dom_state()
-    elements = dom_state.get_string()
-    #elements = await browser.get_content()
+    elements = await browser.update_dom()
     elements_text = f'[Start of page]\n{elements}\n[End of page]'
-    step_info_description = f'Current step: {step_number + 1}/{max_steps}'
+    step_info_description = f'Current step: {step_number}/{max_steps}'
     state_description = f"""
 [Task history memory ends]
 [Current state starts here]
-The following is one-time information - if you need to remember it mention it in your response.
-Specify the reasoning for toolcalls in your response content. 
+The following is one-time information - if you need to remember it mention it in your response (as instructed in the beginning)
+An image is provided, use it to understand the context, the bounding boxes around the buttons have the same indexes as the interactive elements.
 Current url: {url}
-HTML of the page:
+Interactive elements of the page:
 {elements_text}
 {step_info_description}
 """
-    screenshot = await browser.get_screenshot()
+    screenshot = await browser.take_screenshot()
     return HumanMessage(
 				content=[
 					{'type': 'text', 'text': state_description},

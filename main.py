@@ -11,20 +11,19 @@ api_key = os.getenv('GEMINI_API_KEY', '')
 if not api_key:
     raise ValueError("Environment variable 'GEMINI_API_KEY' not found. Please set it in your .env file or environment.")
 
+task = (
+    '''
+    Ultimate Task: 
+    Go to amazon and search for hp laptop and click on first link and add it to cart
+    '''
+)
 
+llm = ChatGoogleGenerativeAI(model='gemini-2.0-flash', api_key=api_key)
 async def main():
-    task = (
-        '''
-        Ultimate Task: 
-        Go to amazon and search for hp laptop and click on first link and add it to cart
-        '''
-    )
-
-    llm = ChatGoogleGenerativeAI(model='gemini-1.5-flash-latest', api_key=api_key)
     agent = Agent(llm=llm) 
     final_result = "Agent execution failed."
+
     try:
-        await agent.setup()
         final_result = await agent.interact(task)
 
     except RuntimeError as e:

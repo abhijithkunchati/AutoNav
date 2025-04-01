@@ -8,7 +8,6 @@ from prompt_utils import create_observation_message, load_prompt
 
 class Agent:
     """Encapsulates the agent logic, browser interaction, and LLM communication."""
-
     def __init__(
         self,
         llm,
@@ -38,16 +37,14 @@ class Agent:
         main_prompt = load_prompt()
         message_history: List[BaseMessage] = [main_prompt]
         message_history.append(task)
-        print(f"\n--- Running Agent for Task: {task} ---")
 
+        print(f"\n--- Running Agent for Task: {task} ---")
         current_iteration = 0
         current_browser_state_message = await create_observation_message(self.browser, current_iteration, self.max_iterations)
         message_history.append(current_browser_state_message)
         response = await self.model_with_tools.ainvoke(message_history)
-        message_history.remove(message_history[-1])
+        message_history.pop()
         message_history.append(response)
-
-
 
         print(f"\nInitial LLM Response Type: {type(response)}")
         print(f"Initial LLM Response Content:\n{response.content}")
@@ -56,15 +53,14 @@ class Agent:
 
 
         while empty_tool_calls<5 and current_iteration < self.max_iterations:
-            if(response.tool_calls):
-                empty_tool_calls = 0
-            else :
-                empty_tool_calls = empty_tool_calls +1
             current_iteration += 1
             print(f"\nIteration {current_iteration + 1}/{self.max_iterations}: LLM requested {len(response.tool_calls)} tool call(s)...")
             tool_messages: List[ToolMessage] = []
 
             for tool_call in response.tool_calls:
+                if tool_call.get("name") == "ultimate_task_done":
+                    print("Ultimate task done. Breaking the loop.")
+                    break
                 tool_result: ToolMessage = await self._execute_tool_call(tool_call)
                 tool_messages.append(tool_result)
 
@@ -73,7 +69,7 @@ class Agent:
             current_browser_state_message = await create_observation_message(self.browser, current_iteration, self.max_iterations)
             message_history.append(current_browser_state_message)
             response = await self.model_with_tools.ainvoke(message_history)
-            message_history.remove(message_history[-1])
+            message_history.pop()
             message_history.append(response)
             print(f"\nLLM Response Content:\n{response.content}")
             print(f"LLM Tool Calls: {response.tool_calls}")
@@ -103,20 +99,8 @@ class Agent:
         tool_name = tool_call.get("name")
         tool_args = tool_call.get("args", {})
         tool_id = tool_call.get("id")
-
-        if not tool_name or not tool_id:
-            error_msg = f"Error: Invalid tool call structure received: {tool_call}"
-            print(f"Skipping invalid tool call: {tool_call}")
-            return ToolMessage(content=error_msg, tool_call_id=tool_id or "unknown")
-
         print(f"  Invoking tool '{tool_name}' with args: {tool_args} (Call ID: {tool_id})")
         tool = next((t for t in self.tools if t.name == tool_name), None)
-
-        if not tool:
-            error_msg = f"Error: Tool '{tool_name}' is not available."
-            print(f"  Tool '{tool_name}' not found.")
-            return ToolMessage(content=error_msg, tool_call_id=tool_id)
-
         try:
             # The tool.func here is the lambda created in create_browser_tools,
             # which already captures the browser instance and calls the correct underlying function.
