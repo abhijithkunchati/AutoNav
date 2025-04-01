@@ -15,6 +15,7 @@ from playwright.async_api import (
     Browser as PlaywrightBrowser,
     BrowserContext as PlaywrightContext,
     Page,
+    ElementHandle,
     TimeoutError as PlaywrightTimeoutError,
     Error as PlaywrightError
 )
@@ -176,7 +177,7 @@ class Browser:
             logger.error(f"Error getting page title: {e}")
             raise BrowserError(f"Failed to get page title: {e}") from e
 
-    async def get_content(self, format: str = "html", max_length: int = 10000) -> str:
+    async def get_content(self, format: str = "html", max_length: int = 100000) -> str:
         page = self._ensure_page()
         time.sleep(3)  # Allow time for the page to load
         logger.info(f"Getting page content (format: {format})")
@@ -316,6 +317,39 @@ class Browser:
 		)
         screenshot_b64 = base64.b64encode(screenshot).decode('utf-8')
         return screenshot_b64
+    
+    async def get_locate_element_by_text(self, text: str, nth: Optional[int] = 0, element_type: Optional[str] = None) -> Optional[ElementHandle]:
+        """
+		Locates an element on the page using the provided text.
+		If `nth` is provided, it returns the nth matching element (0-based).
+		If `element_type` is provided, filters by tag name (e.g., 'button', 'span').
+	"""
+        current_frame = await self.get_current_page()
+        try:
+			# handle also specific element type or use any type.
+            selector = f"{element_type or '*'}:text(\"{text}\")"
+            elements = await current_frame.query_selector_all(selector)
+            # considering only visible elements
+            elements = [el for el in elements if await el.is_visible()]
+
+            if not elements:
+                logger.error(f"No visible element with text '{text}' found.")
+                return None
+
+            if nth is not None:
+                if 0 <= nth < len(elements):
+                    element_handle = elements[nth]
+                else:
+                    logger.error(f"Visible element with text '{text}' not found at index {nth}.")
+                    return None
+            else:
+                element_handle = elements[0]
+
+            await element_handle.scroll_into_view_if_needed()
+            return element_handle
+        except Exception as e:
+            logger.error(f"❌  Failed to locate element by text '{text}': {str(e)}")
+            return None
 
 
     async def __aenter__(self):

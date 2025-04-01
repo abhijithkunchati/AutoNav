@@ -14,18 +14,14 @@ if not api_key:
 
 async def main():
     task = (
-        '''You are an AI agent designed to automate browser tasks. Your goal is to accomplish the ultimate task following the rules. 
-        Use the tools provided.
-        first get interactive elements before clicking on them.
-        You can execute in multiple steps. If you need to know the webpage state before proceeding. 
-        Use the last tool in the sequence to get the webpage state, so in the next interaction you can use the knowledge of the webpage state to proceed.
-        (eg: when you search for something, you need to know the webpage state before clicking on the first link),
-        Go to duckduckgo.com and search for latest news on elon musk and click on first link, and summarize the article. 
+        '''
+        Ultimate Task: 
+        Go to amazon and search for hp laptop and click on first link and add it to cart
         '''
     )
 
     llm = ChatGoogleGenerativeAI(model='gemini-1.5-flash-latest', api_key=api_key)
-    agent = Agent(llm=llm, max_iterations=7) 
+    agent = Agent(llm=llm) 
     final_result = "Agent execution failed."
     try:
         await agent.setup()

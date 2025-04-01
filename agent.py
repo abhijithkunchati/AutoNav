@@ -4,6 +4,7 @@ from langchain_core.messages import BaseMessage, ToolMessage
 from langchain_core.tools import Tool
 from browser import Browser
 from browser_tools import create_browser_tools
+from utils import create_observation_message, load_prompt
 
 class Agent:
     """Encapsulates the agent logic, browser interaction, and LLM communication."""
@@ -11,7 +12,7 @@ class Agent:
     def __init__(
         self,
         llm,
-        max_iterations: int = 5,
+        max_iterations: int = 40,
     ):
         self.llm = llm
         self.max_iterations = max_iterations
@@ -37,20 +38,34 @@ class Agent:
         """Runs the agent for the given task."""
         if not self.browser or not self.model_with_tools:
             raise RuntimeError("Agent is not set up. Call agent.setup() before running.")
-
+        main_prompt = load_prompt()
+        message_history: List[BaseMessage] = [main_prompt]
+        message_history.append(task)
         print(f"\n--- Running Agent for Task: {task} ---")
-        response = await self.model_with_tools.ainvoke(task)
+
+        current_iteration = 0
+        current_browser_state_message = await create_observation_message(self.browser, current_iteration, self.max_iterations)
+        message_history.append(current_browser_state_message)
+        response = await self.model_with_tools.ainvoke(message_history)
+        message_history.remove(message_history[-1])
+        message_history.append(response)
+
+
+
         print(f"\nInitial LLM Response Type: {type(response)}")
         print(f"Initial LLM Response Content:\n{response.content}")
         print(f"Initial LLM Tool Calls: {response.tool_calls}")
+        empty_tool_calls = 0
 
-        current_iteration = 0
-        message_history: List[BaseMessage] = [response] # Start with initial response
 
-        while response.tool_calls and current_iteration < self.max_iterations:
+        while empty_tool_calls<5 and current_iteration < self.max_iterations:
+            if(response.tool_calls):
+                empty_tool_calls = 0
+            else :
+                empty_tool_calls = empty_tool_calls +1
+            current_iteration += 1
             print(f"\nIteration {current_iteration + 1}/{self.max_iterations}: LLM requested {len(response.tool_calls)} tool call(s)...")
             tool_messages: List[ToolMessage] = []
-
 
             for tool_call in response.tool_calls:
                 tool_result: ToolMessage = await self._execute_tool_call(tool_call)
@@ -58,16 +73,16 @@ class Agent:
 
             print(f"\nSending {len(tool_messages)} tool results back to LLM...")
             message_history.extend(tool_messages)
-
-            # Get next response from LLM
+            current_browser_state_message = await create_observation_message(self.browser, current_iteration, self.max_iterations)
+            message_history.append(current_browser_state_message)
             response = await self.model_with_tools.ainvoke(message_history)
+            message_history.remove(message_history[-1])
             message_history.append(response)
             print(f"\nLLM Response Content:\n{response.content}")
             print(f"LLM Tool Calls: {response.tool_calls}")
 
-            current_iteration += 1
-
         print("\n--- Agent Finished ---")
+        print(message_history)
         if response.tool_calls and current_iteration >= self.max_iterations:
             print("Reached max iterations, stopping.")
             return "Agent reached maximum iterations without completing the task."

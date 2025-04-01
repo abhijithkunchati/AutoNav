@@ -26,9 +26,11 @@ class TypeSchema(BaseModel):
     selector: str = Field(..., description="CSS selector for the input element to type into (e.g., 'input[name=\"q\"]').")
     text: str = Field(..., description="The text to type into the element.")
 
-class GetContentSchema(BaseModel):
-    format: str = Field(default="text", description="Content format: 'text' (cleaned visible text) or 'html' (raw HTML).")
-    max_length: int = Field(default=4000, description="Maximum characters to return for 'text' format.")
+class ClickElementByTextSchema(BaseModel):
+    text: str = Field(..., description="The exact visible text content of the element to click.")
+    nth: int = Field(default=0, description="The 0-based index if multiple elements match the text (0 for the first).")
+    element_type: Optional[str] = Field(default=None, description="Optional element type filter (e.g., 'button', 'a', 'span'). If None, searches all elements.")
+
 
 # --- Browser Interaction Helper ---
 
@@ -39,17 +41,17 @@ async def execute_browser_tool(browser: Browser, coro):
     try:
         result = await coro
         if result is None:
-             return "Action completed successfully."
+             return "Success: Action completed successfully."
         return str(result) # Ensure string output for LLM
     except BrowserError as e:
         print(f"Browser tool error: {e}")
-        return f"Browser Error: {e}"
+        return f"Error: Browser Error: {e}"
     except PlaywrightTimeoutError as e:
         print(f"Browser tool timeout: {e}")
-        return f"Browser Timeout Error: Action could not be completed in time. {e}"
+        return f"Error: Browser Timeout Error: Action could not be completed in time. {e}"
     except Exception as e:
         print(f"Unexpected browser tool error: {e}")
-        return f"An unexpected error occurred: {e}"
+        return f"Error: An unexpected error occurred: {e}"
 
 # --- Core Tool Functions (Accept Browser instance) ---
 
@@ -73,10 +75,9 @@ async def get_page_title(browser: Browser) -> str:
     print("Tool: Getting page title")
     return await execute_browser_tool(browser, browser.get_title())
 
-async def read_page_content(browser: Browser, format: str = "text", max_length: int = 4000) -> str:
-    print(f"Tool: Reading page content (format: {format}, max_length: {max_length})")
-    safe_max_length = max(100, min(max_length, 15000))
-    return await execute_browser_tool(browser, browser.get_content(format=format, max_length=safe_max_length))
+async def read_page_content(browser: Browser, format: str = "html") -> str:
+    print(f"Tool: Reading page content (format: {format})")
+    return await execute_browser_tool(browser, browser.get_content(format=format))
 
 async def navigate_back(browser: Browser) -> str:
     print("Tool: Navigating back")
@@ -100,7 +101,7 @@ async def press_enter_key(browser: Browser) -> str:
         print("Warning: Page load state wait timed out after pressing Enter.")
     except Exception as e:
         print(f"Warning: Error waiting for load state after Enter: {e}")
-    return result if result else "Enter key pressed successfully."
+    return result if result else "Success: Enter key pressed successfully."
 
 async def get_interactive_elements(browser: Browser) -> str:
     print("Tool: Getting interactive elements view")
@@ -108,16 +109,16 @@ async def get_interactive_elements(browser: Browser) -> str:
         return "Error: Browser is not initialized or available."
     try:
         state: DOMState = await browser.get__dom_state()
-        _string = state.get__string()
+        _string = state.get_string()
         if not _string:
              return "No interactive elements found or DOM is empty."
-        header = f"Current URL: {state.url}\nPage Title: {state.title}\n\nInteractive Elements:\n"
+        header = f"Success: Current URL: {state.url}\nPage Title: {state.title}\n\nInteractive Elements:\n"
         return header + _string
     except BrowserError as e:
         print(f"Browser tool error getting interactive elements: {e}")
-        return f"Browser Error: {e}"
+        return f"Error: Browser Error: {e}"
     except Exception as e:
-        print(f"Unexpected browser tool error getting interactive elements: {e}")
+        print(f"Error: Unexpected browser tool error getting interactive elements: {e}")
         return f"An unexpected error occurred: {e}"
 
 
@@ -128,6 +129,29 @@ async def click_element_by_index(browser: Browser, index: int) -> str:
 async def type_into_element_by_index(browser: Browser, index: int, text: str) -> str:
     print(f"Tool: Typing '{text[:30]}...' into element index '{index}'")
     return await execute_browser_tool(browser, browser.type_by_index(index, text))
+
+
+async def click_element_with_text(browser: Browser, params: ClickElementByTextSchema) -> str:
+    try:
+        element_node = await browser.get_locate_element_by_text(
+            text=params.text,
+            nth=params.nth,
+            element_type=params.element_type
+        )
+
+        if element_node:
+            try:
+                await element_node.scroll_into_view_if_needed()
+                await element_node.click(timeout=1500, force=True)
+            except Exception:
+                try:
+                    await element_node.evaluate('el => el.click()')
+                except Exception as e:
+                    return f"Error: Element not clickable with text '{params.text}' - {e}"
+        else:
+            return f"Error: No element found '{params.text}' - {e}"
+    except Exception as e:
+        return f"Error: Element not clickable with text '{params.text}' - {e}"
 
 
 # --- Function to Create LangChain Tools ---
@@ -153,12 +177,11 @@ def create_browser_tools(browser: Browser) -> List[Tool]:
             description="Type text into an input field or textarea specified by a CSS selector.",
             args_schema=TypeSchema
         ),
-        # Tool.from_function(
-        #     func=lambda format="text", max_length=4000: read_page_content(browser, format, max_length),
-        #     name="read_page_content",
-        #     description="Read the content of the current webpage. Default format is cleaned text. Use format='html' for raw HTML.",
-        #     args_schema=GetContentSchema
-        # ),
+        Tool.from_function(
+            func=lambda: read_page_content(browser),
+            name="read_page_content",
+            description="Read the content of the current webpage. Default format is cleaned text. Use format='html' for raw HTML.",
+        ),
         Tool.from_function(
             func=lambda: get_current_url(browser),
             name="get_current_url",
@@ -189,12 +212,12 @@ def create_browser_tools(browser: Browser) -> List[Tool]:
             name="press_enter_key",
             description="Simulates pressing the Enter key on the keyboard. Use this after typing text into a search bar or form field to submit it.",
         ),
-        Tool.from_function(
-            func=lambda: get_interactive_elements(browser),
-            name="get_interactive_elements",
-            description="Get a  view of the current page, focusing on interactive elements (links, buttons, inputs) marked with numerical indices like [1], [2]. Use this to identify elements for clicking or typing.",
-            args_schema=GetInteractiveElementsSchema # Use the new schema
-        ),
+        # Tool.from_function(
+        #     func=lambda: get_interactive_elements(browser),
+        #     name="get_interactive_elements",
+        #     description="Get a  view of the current page, focusing on interactive elements (links, buttons, inputs) marked with numerical indices like [1], [2]. Use this to identify elements for clicking or typing.",
+        #     args_schema=GetInteractiveElementsSchema # Use the new schema
+        # ),
          Tool.from_function(
             func=lambda index: click_element_by_index(browser, index),
             name="click_element_by_index",
@@ -207,5 +230,11 @@ def create_browser_tools(browser: Browser) -> List[Tool]:
             description="Type text into an input element identified by its numerical index (e.g., the '[1]' from 'get_interactive_elements').",
             args_schema=TypeByIndexSchema # Use the new schema
         ),
+        Tool.from_function(
+            func=lambda text, nth=0, element_type=None: click_element_with_text(browser, ClickElementByTextSchema(text=text, nth=nth)),
+            name="click_element_by_text",
+            description="Click on an element identified by its exact visible text content. Use 'nth' (default 0) to specify which element if multiple match. Optionally filter by 'element_type' (e.g., 'button', 'a'). Prefer this over other tools for clicking elements.",
+            args_schema=ClickElementByTextSchema
+        )
     ]
     return tools
