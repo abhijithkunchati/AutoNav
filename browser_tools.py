@@ -102,7 +102,7 @@ def create_browser_tools(browser: Browser) -> List[Tool]:
         Tool.from_function(
             func=lambda: navigate_back(browser),
             name="navigate_back",
-            description="Go back to the previous page in the browser history.",
+            description="Go back to the previous page. Eg: Going back to search results page after clicking on a search result.",
         ),
         Tool.from_function(
             func=lambda: navigate_forward(browser),
