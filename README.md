@@ -19,18 +19,18 @@ python main.py
 - Change google api key if rate limits are triggered
 - run main.py,
 
-main.py - boilerplate for running the project, you can customize the task here
-agent.py - main logic resides here
-browser.py - wrapper on playwright browser ( I am currently working on own playwright impl using chrome-dev-tools protocol )
-browser_tools.py - tool bindings for llm and browser API's
-utils.py - utility functions for prompt formatting and html dom-parsing 
-prompt.md - The main system prompt, taken from browser-use (Changing the prompt is giving better perf, working on writing better prompt)
-I intentionally kept the project structure flat because the files are small (less than 500 lines). I will refactor it when I add more features.
+- main.py - boilerplate for running the project, you can customize the task here
+- agent.py - main logic resides here
+- browser.py - wrapper on playwright browser ( I am currently working on own playwright impl using chrome-dev-tools protocol )
+- browser_tools.py - tool bindings for llm and browser API's
+- utils.py - utility functions for prompt formatting and html dom-parsing 
+- prompt.md - The main system prompt, taken from browser-use (Changing the prompt is giving better perf, working on writing better prompt)
+- I intentionally kept the project structure flat because the files are small (less than 500 lines). I will refactor it when I add more features.
 
 
 # Workflow
-We send prompts to LLM (Instructions, task, previous responses, toolcall results and current page state)
-It sends a sequence of tool calls to execute
-We execute those tool calls and then add those results to the existing prompt
-Repeat until task is done
+- We send prompts to LLM (Instructions, task, previous responses, toolcall results and current page state)
+- It sends a sequence of tool calls to execute
+- We execute those tool calls and then add those results to the existing prompt
+- Repeat until task is done
 
