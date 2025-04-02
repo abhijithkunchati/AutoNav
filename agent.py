@@ -11,7 +11,7 @@ class Agent:
     def __init__(
         self,
         llm,
-        max_iterations: int = 40,
+        max_iterations: int =50,
     ):
         self.llm = llm
         self.max_iterations = max_iterations
@@ -33,7 +33,7 @@ class Agent:
     async def interact(self, task: str) -> str:
         """Runs the agent for the given task."""
         if not self.browser or not self.model_with_tools:
-            raise RuntimeError("Agent is not set up. Call agent.setup() before running.")
+            await self.setup()
         main_prompt = load_prompt()
         message_history: List[BaseMessage] = [main_prompt]
         message_history.append(task)
@@ -57,10 +57,12 @@ class Agent:
             print(f"\nIteration {current_iteration + 1}/{self.max_iterations}: LLM requested {len(response.tool_calls)} tool call(s)...")
             tool_messages: List[ToolMessage] = []
 
+
+            ultimate_task_done = any(tool_call.get("name") == "ultimate_task_done" for tool_call in response.tool_calls)
+            if ultimate_task_done:
+                print("Ultimate task done. Breaking the loop.")
+                break
             for tool_call in response.tool_calls:
-                if tool_call.get("name") == "ultimate_task_done":
-                    print("Ultimate task done. Breaking the loop.")
-                    break
                 tool_result: ToolMessage = await self._execute_tool_call(tool_call)
                 tool_messages.append(tool_result)
 
@@ -75,7 +77,6 @@ class Agent:
             print(f"LLM Tool Calls: {response.tool_calls}")
 
         print("\n--- Agent Finished ---")
-        print(message_history)
         if response.tool_calls and current_iteration >= self.max_iterations:
             print("Reached max iterations, stopping.")
             return "Agent reached maximum iterations without completing the task."

@@ -1,13 +1,8 @@
-import asyncio
-from typing import List, Optional
+from typing import List
 from pydantic import BaseModel, Field
 from langchain_core.tools import Tool
-from browser import Browser, BrowserError # Assuming 'browser.py' contains your Browser class
+from browser import Browser, BrowserError
 from playwright.async_api import TimeoutError as PlaywrightTimeoutError
-
-# --- Tool Schemas ---
-class GetInteractiveElementsSchema(BaseModel):
-    pass # No arguments needed
 
 class ClickByIndexSchema(BaseModel):
     index: int = Field(..., description="The numerical index (#number) of the interactive element to click.")
@@ -18,19 +13,6 @@ class TypeByIndexSchema(BaseModel):
 
 class NavigateSchema(BaseModel):
     url: str = Field(..., description="The complete URL to navigate to (e.g., 'https://www.google.com').")
-
-class ClickSchema(BaseModel):
-    selector: str = Field(..., description="CSS selector for the element to click (e.g., 'button#submit', 'a.results-link').")
-
-class TypeSchema(BaseModel):
-    selector: str = Field(..., description="CSS selector for the input element to type into (e.g., 'input[name=\"q\"]').")
-    text: str = Field(..., description="The text to type into the element.")
-
-class ClickElementByTextSchema(BaseModel):
-    text: str = Field(..., description="The exact visible text content of the element to click.")
-    nth: int = Field(default=0, description="The 0-based index if multiple elements match the text (0 for the first).")
-    element_type: Optional[str] = Field(default=None, description="Optional element type filter (e.g., 'button', 'a', 'span'). If None, searches all elements.")
-
 
 # --- Browser Interaction Helper ---
 
@@ -59,14 +41,6 @@ async def navigate_to_url(browser: Browser, url: str) -> str:
     print(f"Tool: Navigating to {url}")
     return await execute_browser_tool(browser, browser.navigate_to_url(url))
 
-async def click_element(browser: Browser, selector: str) -> str:
-    print(f"Tool: Clicking element '{selector}'")
-    return await execute_browser_tool(browser, browser.click(selector))
-
-async def type_into_element(browser: Browser, selector: str, text: str) -> str:
-    print(f"Tool: Typing '{text[:30]}...' into '{selector}'")
-    return await execute_browser_tool(browser, browser.type(selector, text))
-
 async def get_current_url(browser: Browser) -> str:
     print("Tool: Getting current URL")
     return await execute_browser_tool(browser, browser.get_current_url())
@@ -74,10 +48,6 @@ async def get_current_url(browser: Browser) -> str:
 async def get_page_title(browser: Browser) -> str:
     print("Tool: Getting page title")
     return await execute_browser_tool(browser, browser.get_title())
-
-async def read_page_content(browser: Browser) -> str:
-    print(f"Tool: Reading page content )")
-    return await execute_browser_tool(browser, browser.get_html_content())
 
 async def navigate_back(browser: Browser) -> str:
     print("Tool: Navigating back")
@@ -95,7 +65,7 @@ async def press_enter_key(browser: Browser) -> str:
     print("Tool: Pressing Enter key")
     page = browser.get_page()
     await execute_browser_tool(browser, page.keyboard.press('Enter'))
-
+    await browser.wait_for_page_load()
 
 async def click_element_by_index(browser: Browser, index: int) -> str:
     print(f"Tool: Clicking element by index '{index}'")
@@ -104,29 +74,6 @@ async def click_element_by_index(browser: Browser, index: int) -> str:
 async def type_into_element_by_index(browser: Browser, index: int, text: str) -> str:
     print(f"Tool: Typing '{text[:30]}...' into element index '{index}'")
     return await execute_browser_tool(browser, browser.type_element_by_index(index, text))
-
-
-async def click_element_with_text(browser: Browser, params: ClickElementByTextSchema) -> str:
-    try:
-        element_node = await browser.get_locate_element_by_text(
-            text=params.text,
-            nth=params.nth,
-            element_type=params.element_type
-        )
-
-        if element_node:
-            try:
-                await element_node.scroll_into_view_if_needed()
-                await element_node.click(timeout=5500, force=True)
-            except Exception:
-                try:
-                    await element_node.evaluate('el => el.click()')
-                except Exception as e:
-                    return f"Error: Element not clickable with text '{params.text}' - {e}"
-        else:
-            return f"Error: No element found '{params.text}' - {e}"
-    except Exception as e:
-        return f"Error: Element not clickable with text '{params.text}' - {e}"
 
 
 async def ultimate_task_done():
@@ -141,23 +88,6 @@ def create_browser_tools(browser: Browser) -> List[Tool]:
             name="navigate_to_url",
             description="Navigate the browser to a specified URL. Use full URLs (e.g., https://example.com).",
             args_schema=NavigateSchema
-        ),
-        Tool.from_function(
-            func=lambda selector: click_element(browser, selector),
-            name="click_element",
-            description="Click on an HTML element specified by a CSS selector (e.g., 'button#submit', 'a.some-class[href=\"/login\"]').",
-            args_schema=ClickSchema
-        ),
-        Tool.from_function(
-            func=lambda selector, text: type_into_element(browser, selector, text),
-            name="type_into_element",
-            description="Type text into an input field or textarea specified by a CSS selector.",
-            args_schema=TypeSchema
-        ),
-        Tool.from_function(
-            func=lambda: read_page_content(browser),
-            name="read_page_content",
-            description="Read the html content of the current webpage",
         ),
         Tool.from_function(
             func=lambda: get_current_url(browser),
@@ -200,12 +130,6 @@ def create_browser_tools(browser: Browser) -> List[Tool]:
             name="type_into_element_by_index",
             description="Type text into an input element identified by its numerical index (e.g., the '[1]' from 'get_interactive_elements').",
             args_schema=TypeByIndexSchema
-        ),
-        Tool.from_function(
-            func=lambda text, nth=0, element_type=None: click_element_with_text(browser, ClickElementByTextSchema(text=text, nth=nth)),
-            name="click_element_by_text",
-            description="Click on an element identified by its exact visible text content. Use 'nth' (default 0) to specify which element if multiple match. Optionally filter by 'element_type' (e.g., 'button', 'a'). Prefer other tools for clicking elements, try this when they fail",
-            args_schema=ClickElementByTextSchema
         ),
         Tool.from_function(
             func=ultimate_task_done,

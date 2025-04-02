@@ -2,7 +2,6 @@ import asyncio
 import base64
 import logging
 from typing import Optional
-import re 
 import time
 from dom_utils import get_elements, dom_to_string, DOM
 
@@ -12,8 +11,6 @@ from playwright.async_api import (
     Browser as PlaywrightBrowser,
     BrowserContext as PlaywrightContext,
     Page,
-    ElementHandle,
-    TimeoutError as PlaywrightTimeoutError,
     Error as PlaywrightError
 )
 
@@ -118,23 +115,16 @@ class Browser:
 		Waits for either document.readyState to be complete or minimum WAIT_TIME, whichever is longer.
 		"""
         page = self.get_page()
-
-		# Start timing
         start_time = time.time()
-
-		# Wait for page load
         try:
             await page.wait_for_load_state('load', timeout=5000)
         except Exception:
             pass
-
-		# Calculate remaining time to meet minimum WAIT_TIME
         elapsed = time.time() - start_time
         remaining = max(self.MINIMUM_WAIT_TIME - elapsed, 0)
         logger.debug(
 			f'--Page loaded in {elapsed:.2f} seconds, waiting for additional {remaining:.2f} seconds'
 		)
-		# Sleep remaining time if needed
         if remaining > 0:
             await asyncio.sleep(remaining)
 
@@ -142,28 +132,6 @@ class Browser:
         page = self.get_page()
         await page.goto(url)
         await self.wait_for_page_load()
-
-    async def click(self, selector: str, timeout_ms: int = 10000) -> None:
-        page = self.get_page()
-        try:
-            locator = page.locator(selector)
-            await locator.wait_for(state="visible", timeout=timeout_ms / 2)
-            await locator.wait_for(state="enabled", timeout=timeout_ms / 2)
-            await locator.click(timeout=timeout_ms)
-        except Exception as e:
-            logger.error(f"Error clicking element {selector}: {e}")
-            raise BrowserError(f"Failed to click element {selector}: {e}") from e
-
-    async def type(self, selector: str, text: str, delay_ms: int = 30, timeout_ms: int = 10000) -> None:
-        page = self.get_page()
-        try:
-            locator = page.locator(selector)
-            await locator.wait_for(state="visible", timeout=timeout_ms)
-            await locator.fill("", timeout=timeout_ms / 2)
-            await locator.type(text, delay=delay_ms, timeout=timeout_ms)
-        except Exception as e:
-            logger.error(f"Error typing into element {selector}: {e}")
-            raise BrowserError(f"Failed to type into element {selector}: {e}") from e
 
     async def get_current_url(self) -> str:
         page = self.get_page()
@@ -176,16 +144,6 @@ class Browser:
         except PlaywrightError as e:
             logger.error(f"Error getting page title: {e}")
             raise BrowserError(f"Failed to get page title: {e}") from e
-
-    async def get_html_content(self) -> str:
-        page = self.get_page()
-        time.sleep(3)
-        try:
-            content = await page.content()
-            return content
-        except PlaywrightError as e:
-            logger.error(f"Error getting page content (format: {format}): {e}")
-            raise BrowserError(f"Failed to get page content: {e}") from e
 
     async def navigate_back(self, wait_until: str = "domcontentloaded", timeout_ms: int = 10000) -> None:
         page = self.get_page()
@@ -237,40 +195,6 @@ class Browser:
 				)
         xpath = self.dom.element_map[index]
         await self._input_text_by_xpath(xpath, text)
-        
-    
-    async def get_locate_element_by_text(self, text: str, nth: Optional[int] = 0, element_type: Optional[str] = None) -> Optional[ElementHandle]:
-        """
-		Locates an element on the page using the provided text.
-		If `nth` is provided, it returns the nth matching element (0-based).
-		If `element_type` is provided, filters by tag name (e.g., 'button', 'span').
-	"""
-        current_frame = await self.get_current_page()
-        try:
-			# handle also specific element type or use any type.
-            selector = f"{element_type or '*'}:text(\"{text}\")"
-            elements = await current_frame.query_selector_all(selector)
-            # considering only visible elements
-            elements = [el for el in elements if await el.is_visible()]
-
-            if not elements:
-                logger.error(f"No visible element with text '{text}' found.")
-                return None
-
-            if nth is not None:
-                if 0 <= nth < len(elements):
-                    element_handle = elements[nth]
-                else:
-                    logger.error(f"Visible element with text '{text}' not found at index {nth}.")
-                    return None
-            else:
-                element_handle = elements[0]
-
-            await element_handle.scroll_into_view_if_needed()
-            return element_handle
-        except Exception as e:
-            logger.error(f"❌  Failed to locate element by text '{text}': {str(e)}")
-            return None
     
     async def _input_text_by_xpath(self, xpath: str, text: str):
         page = self.get_page()
@@ -291,22 +215,17 @@ class Browser:
 
     async def _click_element_by_xpath(self, xpath: str):
         page = self.get_page()
-
         try:
             element = await page.wait_for_selector(f'xpath={xpath}', timeout=10000, state='visible')
-
             if element is None:
                 raise Exception(f'Element with xpath: {xpath} not found')
-
             await element.scroll_into_view_if_needed()
-
             try:
                 await element.click()
                 await self.wait_for_page_load()
                 return
             except Exception:
                 pass
-
             try:
                 await page.evaluate('(el) => el.click()', element)
                 await self.wait_for_page_load()
@@ -340,7 +259,6 @@ class Browser:
         script = """
         const highlights = {
         """
-
         try: 
         # Build the highlights object with all selectors and indices
             if(not self.dom and not self.dom.element_map):
@@ -348,7 +266,6 @@ class Browser:
             for index, selector in self.dom.element_map.items():
                 # Adjusting the JavaScript code to accept variables
                 script += f'"{index}": "{selector}",\n'
-
             script += """
             };
             
@@ -399,7 +316,6 @@ class Browser:
             )
         except Exception as e: 
             raise Exception(f'Error While removing Highlights: {str(e)}')
-
 
 
     async def __aenter__(self):

@@ -11,10 +11,12 @@ api_key = os.getenv('GEMINI_API_KEY', '')
 if not api_key:
     raise ValueError("Environment variable 'GEMINI_API_KEY' not found. Please set it in your .env file or environment.")
 
+
 task = (
     '''
     Ultimate Task: 
-    Go to amazon and search for hp laptop and click on first link and add it to cart
+    login to ycombinator hacker news using these creds username: abhi-temp password: tonystark
+    open any news in the top 30 that is related to AI
     '''
 )
 
