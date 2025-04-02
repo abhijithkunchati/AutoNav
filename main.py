@@ -22,22 +22,19 @@ task = (
 
 llm = ChatGoogleGenerativeAI(model='gemini-2.0-flash', api_key=api_key)
 async def main():
-    agent = Agent(llm=llm) 
-    final_result = "Agent execution failed."
-
+    agent = Agent(llm=llm)
+    final_result = None
     try:
         final_result = await agent.interact(task)
-
     except RuntimeError as e:
          print(f"Agent runtime error: {e}")
     except Exception as e:
         print(f"An unexpected error occurred during agent execution: {e}")
-
     finally:
         await agent.close() 
 
     print("\n--- Final Agent Output ---")
-    print(final_result)
+    print(final_result if final_result is not None else "Failed to retrieve the final result.")
     print("--------------------------")
 
 

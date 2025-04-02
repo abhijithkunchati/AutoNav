@@ -41,27 +41,29 @@ class Agent:
         print(f"\n--- Running Agent for Task: {task} ---")
         current_iteration = 0
         current_browser_state_message = await create_observation_message(self.browser, current_iteration, self.max_iterations)
-        message_history.append(current_browser_state_message)
-        response = await self.model_with_tools.ainvoke(message_history)
-        message_history.pop()
-        message_history.append(response)
+        message_history.append(current_browser_state_message)               # Add initial browser state to message history
+        response = await self.model_with_tools.ainvoke(message_history)     # Send the prompt to LLM
+        message_history.pop()                                               # Remove the browser state message. will add updated one later
+        message_history.append(response)                                    # Add LLM response to message history. so it knows what it did last
 
-        print(f"\nInitial LLM Response Type: {type(response)}")
         print(f"Initial LLM Response Content:\n{response.content}")
         print(f"Initial LLM Tool Calls: {response.tool_calls}")
-        empty_tool_calls = 0
 
 
-        while empty_tool_calls<5 and current_iteration < self.max_iterations:
+        # Loop until the task is done or the max iterations are reached. 
+        # For more complex tasks with lot of steps, you may need more iterations. Configure the parameter accordingly.
+        while current_iteration < self.max_iterations:
             current_iteration += 1
             print(f"\nIteration {current_iteration + 1}/{self.max_iterations}: LLM requested {len(response.tool_calls)} tool call(s)...")
             tool_messages: List[ToolMessage] = []
 
-
+            #When the task is done, LLM will call this tool to indicate that the task is done
             ultimate_task_done = any(tool_call.get("name") == "ultimate_task_done" for tool_call in response.tool_calls)
             if ultimate_task_done:
                 print("Ultimate task done. Breaking the loop.")
                 break
+            
+            #Execute the tool calls in sequence
             for tool_call in response.tool_calls:
                 tool_result: ToolMessage = await self._execute_tool_call(tool_call)
                 tool_messages.append(tool_result)
