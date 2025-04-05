@@ -3,7 +3,7 @@ import base64
 import logging
 from typing import Optional
 import time
-from dom_utils import get_elements, dom_to_string, DOM
+from auto_nav.dom_utils import get_elements, dom_to_string, DOM
 
 from playwright.async_api import (
     Playwright,

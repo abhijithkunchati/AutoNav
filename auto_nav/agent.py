@@ -2,9 +2,9 @@ import asyncio
 from typing import List, Optional
 from langchain_core.messages import BaseMessage, ToolMessage
 from langchain_core.tools import Tool
-from browser import Browser
-from browser_tools import create_browser_tools
-from prompt_utils import create_observation_message, load_prompt
+from auto_nav.browser import Browser
+from auto_nav.browser_tools import create_browser_tools
+from auto_nav.prompt_utils import create_observation_message, load_prompt
 
 class Agent:
     """Encapsulates the agent logic, browser interaction, and LLM communication."""

@@ -1,7 +1,7 @@
 from typing import List
 from pydantic import BaseModel, Field
 from langchain_core.tools import Tool
-from browser import Browser, BrowserError
+from auto_nav.browser import Browser, BrowserError
 from playwright.async_api import TimeoutError as PlaywrightTimeoutError
 
 class ClickByIndexSchema(BaseModel):

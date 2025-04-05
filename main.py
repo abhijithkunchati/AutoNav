@@ -2,7 +2,7 @@ import os
 import asyncio
 from dotenv import load_dotenv
 from langchain_google_genai import ChatGoogleGenerativeAI
-from agent import Agent 
+from auto_nav.agent import Agent 
 
 # --- Environment Setup ---
 load_dotenv()
@@ -15,8 +15,7 @@ if not api_key:
 task = (
     '''
     Ultimate Task: 
-    login to ycombinator hacker news using these creds username: abhi-temp password: tonystark
-    open any news in the top 30 that is related to AI
+    go to ebay and buy a new hp laptop with 16GB RAM and 512GB SSD.
     '''
 )
 

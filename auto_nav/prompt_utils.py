@@ -1,5 +1,6 @@
 from __future__ import annotations
-from browser import Browser
+from auto_nav.browser import Browser
+import importlib.resources
 from langchain_core.messages import (
     HumanMessage,
 )
@@ -40,7 +41,7 @@ Interactive elements of the page:
 def load_prompt() -> str:
     """Load the prompt template from the markdown file."""
     try:
-        with open('prompt.md', 'r') as f:
+        with importlib.resources.files('auto_nav').joinpath('prompt.md').open('r') as f:
             return f.read()
     except Exception as e:
         raise RuntimeError(f'Failed to load system prompt template: {e}')
