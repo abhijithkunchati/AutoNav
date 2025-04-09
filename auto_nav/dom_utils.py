@@ -29,7 +29,7 @@ class DOM(BaseModel):
 	element_map: dict[int, str]
 
 async def get_elements(page:Page) -> DOM:
-    page.wait_for_load_state('load')
+    await page.wait_for_load_state('load')
     html = await page.content()
     soup = BeautifulSoup(html, 'html.parser')
 

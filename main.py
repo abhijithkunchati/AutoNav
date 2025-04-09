@@ -15,7 +15,7 @@ if not api_key:
 task = (
     '''
     Ultimate Task: 
-    go to ebay and buy a new hp laptop with 16GB RAM and 512GB SSD.
+    search for hp laptop on amazon and add it to cart
     '''
 )
 

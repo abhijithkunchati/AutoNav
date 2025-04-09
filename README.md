@@ -3,7 +3,7 @@ AI Agent for automating browser workflows
 
 ## Demo
  
- ![til](./assets/AI_Agent_Demo.gif)
+ ![til](./assets/AI_Agent_Demo_2.gif)
 
 
 
